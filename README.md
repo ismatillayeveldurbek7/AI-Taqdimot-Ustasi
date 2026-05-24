@@ -62,6 +62,7 @@ Edit `.env` with your values:
 | `BOT_TOKEN` | From [@BotFather](https://t.me/BotFather) |
 | `ADMIN_IDS` | Your Telegram ID(s), comma-separated |
 | `OPENAI_API_KEY` | From [platform.openai.com](https://platform.openai.com) |
+| `OPENAI_MODEL` | Optional, default: `gpt-4o-mini` |
 | `CARD_NUMBER` | Your payment card number |
 | `CARD_OWNER` | Card holder name |
 

@@ -1,5 +1,5 @@
 """
-AI Taqdimot Ustasi — AI Service (Gemini + fallback)
+AI Taqdimot Ustasi — AI Service (OpenAI / ChatGPT)
 Mustahkam xato boshqaruvi: retry, timeout, fallback model, aniq log.
 """
 
@@ -8,20 +8,25 @@ import re
 import asyncio
 import time
 from typing import Optional
-import google.generativeai as genai
-from config import GEMINI_API_KEY
+from openai import OpenAI
+from config import OPENAI_API_KEY, OPENAI_MODEL
 from utils.logger import logger
 
-# API kalitini sozlash
-genai.configure(api_key=GEMINI_API_KEY)
+# API client
+client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 # ─── Model nomlari (birinchisidan boshlab sinab ko'riladi) ──────────────────────
-GEMINI_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
-    "gemini-1.5-pro",
-]
+# OPENAI_MODEL .env ichida berilsa, avval o'sha model ishlaydi.
+OPENAI_MODELS = []
+if OPENAI_MODEL:
+    OPENAI_MODELS.append(OPENAI_MODEL)
+OPENAI_MODELS.extend([
+    "gpt-4o-mini",
+    "gpt-4.1-mini",
+    "gpt-4o",
+])
+# takrorlarni olib tashlash
+OPENAI_MODELS = list(dict.fromkeys(OPENAI_MODELS))
 
 # ─── Xarita ─────────────────────────────────────────────────────────────────────
 LANG_MAP = {
@@ -61,7 +66,7 @@ def _build_prompt(topic: str, slides: int, language: str,
         "Har bir slaydda qisqa, aniq va professional matn yozing."
     )
 
-    return f"""Siz professional taqdimot yaratuvchi AI assistantsiz.
+    return f"""Siz professional taqdimot yaratuvchi ChatGPT assistantsiz.
 
 Quyidagi ma'lumotlar asosida {slides} ta slayddan iborat taqdimot yarating:
 
@@ -94,15 +99,27 @@ Slaydlar soni AYNAN {slides} ta bo'lsin. Birinchi slayd — kirish/muqova."""
 # ─── JSON tozalovchi ────────────────────────────────────────────────────────────
 def _clean_json(raw: str) -> str:
     raw = raw.strip()
-    # Markdown kod bloklarini olib tashlash
     raw = re.sub(r"```json\s*", "", raw, flags=re.IGNORECASE)
     raw = re.sub(r"```\s*", "", raw)
     raw = raw.strip()
-    # Eng katta JSON ob'ektni topish
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if match:
         raw = match.group(0)
     return raw
+
+
+def _extract_response_text(response) -> str:
+    """OpenAI Responses API javobidan matnni xavfsiz olish."""
+    if getattr(response, "output_text", None):
+        return response.output_text
+
+    chunks = []
+    for item in getattr(response, "output", []) or []:
+        for content in getattr(item, "content", []) or []:
+            text = getattr(content, "text", None)
+            if text:
+                chunks.append(text)
+    return "".join(chunks)
 
 
 # ─── Asosiy generator: retry + fallback modellar ────────────────────────────────
@@ -115,11 +132,11 @@ async def generate_presentation(
     output_type: str,
 ) -> Optional[dict]:
     """
-    Taqdimot ma'lumotlarini Gemini orqali yaratadi.
-    Xatolik bo'lsa, boshqa modelni sinaydi (3 ta urinish).
+    Taqdimot ma'lumotlarini OpenAI ChatGPT orqali yaratadi.
+    Xatolik bo'lsa, boshqa modelni sinaydi.
     """
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY topilmadi! .env faylini tekshiring.")
+    if not OPENAI_API_KEY or client is None:
+        logger.error("OPENAI_API_KEY topilmadi! .env faylini tekshiring.")
         return None
 
     is_premium = output_type == "premium"
@@ -127,31 +144,32 @@ async def generate_presentation(
 
     last_error = None
 
-    for model_name in GEMINI_MODELS:
-        for attempt in range(2):  # Har model uchun 2 urinish
+    for model_name in OPENAI_MODELS:
+        for attempt in range(2):
             try:
-                logger.info(f"AI urinish: model={model_name}, attempt={attempt+1}")
+                logger.info(f"OpenAI urinish: model={model_name}, attempt={attempt+1}")
                 t0 = time.time()
 
-                model = genai.GenerativeModel(model_name)
-
-                # Sinxron chaqiruvni async threadda ishlatish
                 response = await asyncio.wait_for(
                     asyncio.to_thread(
-                        model.generate_content,
-                        prompt,
-                        generation_config={
-                            "temperature": 0.7,
-                            "max_output_tokens": 4096,
-                            "response_mime_type": "application/json",
-                        },
+                        client.responses.create,
+                        model=model_name,
+                        input=[
+                            {
+                                "role": "system",
+                                "content": "Siz faqat valid JSON qaytaradigan professional taqdimot generatorisiz.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        max_output_tokens=4096,
+                        text={"format": {"type": "json_object"}},
                     ),
-                    timeout=60.0,  # 60 soniya timeout
+                    timeout=60.0,
                 )
 
                 elapsed = time.time() - t0
-                raw = (response.text or "").strip()
-                logger.info(f"Gemini javob ({elapsed:.1f}s, {len(raw)} belgi): {raw[:200]}")
+                raw = _extract_response_text(response).strip()
+                logger.info(f"OpenAI javob ({elapsed:.1f}s, {len(raw)} belgi): {raw[:200]}")
 
                 if not raw:
                     logger.warning(f"{model_name}: bo'sh javob")
@@ -161,7 +179,6 @@ async def generate_presentation(
                 cleaned = _clean_json(raw)
                 data = json.loads(cleaned)
 
-                # Majburiy tekshiruv
                 if "title" not in data:
                     data["title"] = topic
                 if "slides" not in data or not isinstance(data["slides"], list):
@@ -173,7 +190,9 @@ async def generate_presentation(
                     last_error = "Bo'sh slides"
                     continue
 
-                # Har bir slaydda kerakli maydonlarni to'ldirish
+                # AI kam/ko'p slayd qaytarsa ham bot buzilmasin.
+                data["slides"] = data["slides"][:slides]
+
                 for i, s in enumerate(data["slides"]):
                     s.setdefault("number", i + 1)
                     s.setdefault("title", f"Slayd {i+1}")
@@ -199,22 +218,19 @@ async def generate_presentation(
                 logger.warning(f"{model_name} attempt {attempt+1}: {err_str}")
                 last_error = err_str
 
-                # Model topilmasa yoki API key noto'g'ri — keyingi modelga o'tish
                 if any(k in err_str.lower() for k in [
                     "not found", "invalid", "api_key", "quota", "permission",
-                    "404", "403", "401", "deprecated"
+                    "404", "403", "401", "deprecated", "model"
                 ]):
                     logger.warning(f"{model_name} ishlatib bo'lmaydi, keyingiga o'tmoqda...")
-                    break  # Bu model uchun retry qilma
+                    break
 
-            # Retry oldidan biroz kutish
             if attempt == 0:
                 await asyncio.sleep(1.5)
 
-        # Modellar o'rtasida kutish
         await asyncio.sleep(0.5)
 
-    logger.error(f"❌ Barcha modellar xato berdi. Oxirgi xato: {last_error}")
+    logger.error(f"❌ Barcha OpenAI modellari xato berdi. Oxirgi xato: {last_error}")
     return None
 
 
