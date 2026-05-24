@@ -14,25 +14,22 @@ async def main() -> None:
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN is not set in .env file!")
 
-    # ── Initialize database ───────────────────────────────────────────────────
     logger.info("Initializing database...")
     await init_db()
     logger.info("Database initialized.")
 
-    # ── Bot & Dispatcher ──────────────────────────────────────────────────────
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher(storage=MemoryStorage())
 
-    # ── Register routers ──────────────────────────────────────────────────────
-    dp.include_router(user.router)
+    # Tartib muhim: admin va payment avval, user eng oxirida
+    dp.include_router(admin.router)
     dp.include_router(payment.router)
     dp.include_router(presentation.router)
-    dp.include_router(admin.router)
+    dp.include_router(user.router)
 
-    # ── Start polling ─────────────────────────────────────────────────────────
     logger.info("Bot is starting...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

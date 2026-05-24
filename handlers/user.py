@@ -1,12 +1,13 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import AsyncSessionLocal, get_setting
 from models import User, Presentation
-from keyboards import main_menu_kb, back_kb
+from keyboards import main_menu_kb
 from utils.logger import logger
 from utils.validators import is_spam
 
@@ -14,7 +15,6 @@ router = Router()
 
 
 async def get_or_create_user(session: AsyncSession, message: Message) -> User:
-    """Fetch existing user or register new one."""
     result = await session.execute(
         select(User).where(User.telegram_id == message.from_user.id)
     )
@@ -31,7 +31,6 @@ async def get_or_create_user(session: AsyncSession, message: Message) -> User:
         await session.refresh(user)
         logger.info(f"New user registered: {user.telegram_id} ({user.full_name})")
     else:
-        # Update name/username in case they changed
         user.full_name = message.from_user.full_name
         user.username = message.from_user.username
         await session.commit()
@@ -39,7 +38,10 @@ async def get_or_create_user(session: AsyncSession, message: Message) -> User:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, state: FSMContext) -> None:
+    # Agar state bo'lsa, tozalab tashlash
+    await state.clear()
+
     async with AsyncSessionLocal() as session:
         user = await get_or_create_user(session, message)
         if user.is_blocked:
@@ -53,22 +55,23 @@ async def cmd_start(message: Message) -> None:
         "💰 Avval coin sotib oling, keyin taqdimot yarating!\n\n"
         "Quyidagi menyudan tanlang:",
         reply_markup=main_menu_kb(),
-        parse_mode="HTML",
     )
 
 
-@router.message(Command("admin"))
-async def cmd_admin(message: Message) -> None:
-    from config import ADMIN_IDS
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    from keyboards import admin_main_kb
-    await message.answer("🛠 <b>Admin Panel</b>", reply_markup=admin_main_kb(), parse_mode="HTML")
+@router.message(Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext) -> None:
+    current = await state.get_state()
+    if current:
+        await state.clear()
+        await message.answer("❌ Bekor qilindi.", reply_markup=main_menu_kb())
+    else:
+        await message.answer("Hozir hech qanday jarayon yo'q.", reply_markup=main_menu_kb())
 
 
 @router.message(F.text == "👛 Balansim")
 async def balance_handler(message: Message) -> None:
     if is_spam(message.from_user.id):
+        await message.answer("⚠️ Iltimos, biroz kuting.")
         return
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -76,20 +79,20 @@ async def balance_handler(message: Message) -> None:
         )
         user = result.scalars().first()
         if not user:
-            await cmd_start(message)
+            await cmd_start.__wrapped__(message) if hasattr(cmd_start, '__wrapped__') else await message.answer("Iltimos /start bosing.")
             return
 
     await message.answer(
         f"👛 <b>Balansingiz</b>\n\n"
         f"🪙 Coinlar: <b>{user.balance} coin</b>\n\n"
         f"💰 Coin sotib olish uchun <b>«💰 Coin sotib olish»</b> tugmasini bosing.",
-        parse_mode="HTML",
     )
 
 
 @router.message(F.text == "📂 Taqdimotlarim")
 async def my_presentations(message: Message) -> None:
     if is_spam(message.from_user.id):
+        await message.answer("⚠️ Iltimos, biroz kuting.")
         return
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -97,6 +100,7 @@ async def my_presentations(message: Message) -> None:
         )
         user = result.scalars().first()
         if not user:
+            await message.answer("Iltimos /start bosing.")
             return
 
         pres_result = await session.execute(
@@ -111,8 +115,7 @@ async def my_presentations(message: Message) -> None:
         await message.answer(
             "📂 <b>Taqdimotlarim</b>\n\n"
             "Hozircha hech qanday taqdimot yaratmadingiz.\n"
-            "🎨 Yangi taqdimot yaratish uchun «Taqdimot yaratish» tugmasini bosing.",
-            parse_mode="HTML",
+            "🎨 Yangi taqdimot yaratish uchun «🎨 Taqdimot yaratish» tugmasini bosing.",
         )
         return
 
@@ -125,7 +128,7 @@ async def my_presentations(message: Message) -> None:
             f"   🗂 {p.slides_count} slayd • {p.coins_spent} coin • {date_str}"
         )
 
-    await message.answer("\n".join(lines), parse_mode="HTML")
+    await message.answer("\n".join(lines))
 
 
 @router.message(F.text == "ℹ️ Bot haqida")
@@ -145,7 +148,6 @@ async def about_bot(message: Message) -> None:
         "• 📝 Matn taqdimoti: 5 coin\n"
         "• 📊 PPTX fayl: 10 coin\n"
         "• ⭐ Premium batafsil: 15 coin",
-        parse_mode="HTML",
     )
 
 
@@ -159,12 +161,15 @@ async def support_handler(message: Message) -> None:
         f"Muammo yoki savollaringiz bo'lsa, adminga murojaat qiling:\n\n"
         f"👤 Admin: {support}\n\n"
         f"⏰ Ish vaqti: Har kuni 9:00 - 22:00",
-        parse_mode="HTML",
     )
 
 
 @router.callback_query(F.data == "back_main")
-async def back_to_main(callback: CallbackQuery) -> None:
-    await callback.message.delete()
+async def back_to_main(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await callback.message.answer("🏠 Asosiy menyu:", reply_markup=main_menu_kb())
     await callback.answer()
