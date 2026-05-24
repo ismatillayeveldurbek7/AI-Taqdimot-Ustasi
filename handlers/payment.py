@@ -1,13 +1,15 @@
 from aiogram import Bot, Router, F
-from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import ADMIN_IDS
 from database import AsyncSessionLocal, get_setting
 from models import CoinPackage, Payment, User
-from keyboards import admin_payment_kb, main_menu_kb, packages_kb, paid_kb
+from keyboards import (
+    admin_payment_kb, main_menu_kb, packages_kb, paid_kb
+)
 from services.payment_service import approve_payment, reject_payment, create_payment
 from states import PaymentStates
 from utils.logger import logger
@@ -16,28 +18,20 @@ from utils.validators import is_spam
 router = Router()
 
 
-# ─── Coin sotib olish menyusi ─────────────────────────────────────────────────
+# ─── Show packages ────────────────────────────────────────────────────────────
 
 @router.message(F.text == "💰 Coin sotib olish")
 async def buy_coins_menu(message: Message, state: FSMContext) -> None:
     if is_spam(message.from_user.id):
-        await message.answer("⚠️ Iltimos, biroz kuting.")
         return
-
-    # Oldingi stateni tozalash
-    await state.clear()
-
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(CoinPackage).where(CoinPackage.is_active == True).order_by(CoinPackage.coins)
+            select(CoinPackage).where(CoinPackage.is_active == True)
         )
         packages = result.scalars().all()
 
     if not packages:
-        await message.answer(
-            "❌ Hozirda mavjud paketlar yo'q.\n"
-            "Keyinroq urinib ko'ring yoki admin bilan bog'laning."
-        )
+        await message.answer("❌ Hozirda mavjud paketlar yo'q. Keyinroq urinib ko'ring.")
         return
 
     await state.set_state(PaymentStates.choosing_package)
@@ -45,10 +39,11 @@ async def buy_coins_menu(message: Message, state: FSMContext) -> None:
         "💰 <b>Coin sotib olish</b>\n\n"
         "Quyidagi paketlardan birini tanlang:",
         reply_markup=packages_kb(packages),
+        parse_mode="HTML",
     )
 
 
-# ─── Paket tanlandi ───────────────────────────────────────────────────────────
+# ─── Package selected ─────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("buy_package:"))
 async def package_selected(callback: CallbackQuery, state: FSMContext) -> None:
@@ -86,25 +81,20 @@ async def package_selected(callback: CallbackQuery, state: FSMContext) -> None:
         f"4. Admin tasdiqlashini kuting\n\n"
         f"⏱ Tasdiqlash vaqti: 5-30 daqiqa",
         reply_markup=paid_kb(pkg_id),
+        parse_mode="HTML",
     )
     await callback.answer()
 
 
-# ─── "To'ladim" tugmasi ───────────────────────────────────────────────────────
+# ─── User says "I paid" ───────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("i_paid:"))
 async def i_paid(callback: CallbackQuery, state: FSMContext) -> None:
-    # State'ni waiting_receipt ga o'rnatish
-    data = await state.get_data()
-    if not data.get("package_id"):
-        pkg_id = int(callback.data.split(":")[1])
-        await state.update_data(package_id=pkg_id)
-    await state.set_state(PaymentStates.waiting_receipt)
-
     await callback.message.edit_text(
         "📸 <b>Chek rasmini yuboring</b>\n\n"
         "To'lov chekining rasmini (screenshot yoki fotosuratini) yuboring.\n\n"
         "⚠️ Eslatma: Cheksiz to'lovlar tasdiqlanmaydi.",
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -116,32 +106,28 @@ async def cancel_payment_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ─── Chek rasmi qabul qilindi ─────────────────────────────────────────────────
+# ─── Receipt photo received ───────────────────────────────────────────────────
 
-@router.message(StateFilter(PaymentStates.waiting_receipt), F.photo)
+@router.message(PaymentStates.waiting_receipt, F.photo)
 async def receipt_received(message: Message, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     pkg_id = data.get("package_id")
-
     if not pkg_id:
-        await message.answer(
-            "⚠️ Xatolik yuz berdi. Iltimos qaytadan boshlang.",
-            reply_markup=main_menu_kb(),
-        )
         await state.clear()
         return
 
-    photo_file_id = message.photo[-1].file_id
+    photo_file_id = message.photo[-1].file_id  # Highest resolution
 
     async with AsyncSessionLocal() as session:
+        # Get user
         user_res = await session.execute(
             select(User).where(User.telegram_id == message.from_user.id)
         )
         user = user_res.scalars().first()
         if not user:
-            await state.clear()
             return
 
+        # Get package
         pkg_res = await session.execute(
             select(CoinPackage).where(CoinPackage.id == pkg_id)
         )
@@ -151,10 +137,12 @@ async def receipt_received(message: Message, state: FSMContext, bot: Bot) -> Non
             await state.clear()
             return
 
+        # Create payment record
         payment = await create_payment(session, user, package)
         payment.receipt_file_id = photo_file_id
         await session.commit()
 
+        # Notify admins
         admin_text = (
             f"💳 <b>Yangi to'lov so'rovi #{payment.id}</b>\n\n"
             f"👤 Foydalanuvchi: <a href='tg://user?id={user.telegram_id}'>{user.full_name}</a>\n"
@@ -171,7 +159,9 @@ async def receipt_received(message: Message, state: FSMContext, bot: Bot) -> Non
                     photo=photo_file_id,
                     caption=admin_text,
                     reply_markup=admin_payment_kb(payment.id),
+                    parse_mode="HTML",
                 )
+                # Store admin message id for later editing
                 if payment.admin_message_id is None:
                     payment.admin_message_id = sent.message_id
             except Exception as e:
@@ -186,18 +176,20 @@ async def receipt_received(message: Message, state: FSMContext, bot: Bot) -> Non
         "⏱ Tasdiqlash vaqti: 5-30 daqiqa\n\n"
         "Tasdiqlangach sizga xabar beriladi! 🎉",
         reply_markup=main_menu_kb(),
+        parse_mode="HTML",
     )
 
 
-@router.message(StateFilter(PaymentStates.waiting_receipt))
+@router.message(PaymentStates.waiting_receipt)
 async def receipt_not_photo(message: Message) -> None:
     await message.answer(
         "⚠️ Iltimos, faqat <b>rasm (screenshot)</b> yuboring.\n"
         "Matn yoki fayl qabul qilinmaydi.",
+        parse_mode="HTML",
     )
 
 
-# ─── Admin: Tasdiqlash / Rad etish ───────────────────────────────────────────
+# ─── Admin: Approve / Reject ──────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("approve_pay:"))
 async def approve_pay(callback: CallbackQuery, bot: Bot) -> None:
@@ -223,13 +215,13 @@ async def approve_pay(callback: CallbackQuery, bot: Bot) -> None:
 
         new_balance = user.balance if user else "?"
 
-    try:
-        await callback.message.edit_caption(
-            (callback.message.caption or "") + f"\n\n✅ <b>TASDIQLANDI</b> — @{callback.from_user.username}",
-        )
-    except Exception:
-        pass
+    # Edit admin message
+    await callback.message.edit_caption(
+        callback.message.caption + f"\n\n✅ <b>TASDIQLANDI</b> — @{callback.from_user.username}",
+        parse_mode="HTML",
+    )
 
+    # Notify user
     if user:
         try:
             await bot.send_message(
@@ -241,9 +233,10 @@ async def approve_pay(callback: CallbackQuery, bot: Bot) -> None:
                     f"🎨 Endi taqdimot yaratishingiz mumkin!"
                 ),
                 reply_markup=main_menu_kb(),
+                parse_mode="HTML",
             )
         except Exception as e:
-            logger.error(f"Failed to notify user: {e}")
+            logger.error(f"Failed to notify user {user.telegram_id}: {e}")
 
     await callback.answer("✅ Tasdiqlandi!")
 
@@ -270,12 +263,10 @@ async def reject_pay(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("⚠️ Bu to'lov allaqachon ko'rib chiqilgan.", show_alert=True)
             return
 
-    try:
-        await callback.message.edit_caption(
-            (callback.message.caption or "") + f"\n\n❌ <b>RAD ETILDI</b> — @{callback.from_user.username}",
-        )
-    except Exception:
-        pass
+    await callback.message.edit_caption(
+        callback.message.caption + f"\n\n❌ <b>RAD ETILDI</b> — @{callback.from_user.username}",
+        parse_mode="HTML",
+    )
 
     if user:
         try:
@@ -285,13 +276,14 @@ async def reject_pay(callback: CallbackQuery, bot: Bot) -> None:
                     "❌ <b>To'lovingiz rad etildi.</b>\n\n"
                     "Mumkin bo'lgan sabablar:\n"
                     "• Noto'g'ri summa o'tkazilgan\n"
-                    "• Chek rasmi aniq emas\n"
+                    "• Chek rasmsi aniq emas\n"
                     "• Noto'g'ri karta\n\n"
                     "📞 Muammo bo'lsa admin bilan bog'laning."
                 ),
                 reply_markup=main_menu_kb(),
+                parse_mode="HTML",
             )
         except Exception as e:
-            logger.error(f"Failed to notify user: {e}")
+            logger.error(f"Failed to notify user {user.telegram_id}: {e}")
 
     await callback.answer("❌ Rad etildi!")
