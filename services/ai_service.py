@@ -1,10 +1,11 @@
 import json
 import re
-from openai import AsyncOpenAI
-from config import OPENAI_API_KEY
+import asyncio
+import google.generativeai as genai
+from config import GEMINI_API_KEY
 from utils.logger import logger
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
 LANG_MAP = {
     "uzbek": "O'zbek tilida",
@@ -29,14 +30,7 @@ COLOR_LABEL = {
 }
 
 
-def _build_prompt(
-    topic: str,
-    slides: int,
-    language: str,
-    style: str,
-    color: str,
-    is_premium: bool,
-) -> str:
+def _build_prompt(topic, slides, language, style, color, is_premium):
     lang_instruction = LANG_MAP.get(language, "in English")
     style_instruction = STYLE_MAP.get(style, "professional")
     color_instruction = COLOR_LABEL.get(color, "Ko'k")
@@ -85,30 +79,27 @@ Slayd tuzilishi:
 Faqat JSON qaytaring, markdown yoki boshqa format bo'lmasin."""
 
 
-async def generate_presentation(
-    topic: str,
-    slides: int,
-    language: str,
-    style: str,
-    color: str,
-    output_type: str,
-) -> dict | None:
-    """Call OpenAI and return parsed presentation dict."""
+async def generate_presentation(topic, slides, language, style, color, output_type):
     is_premium = output_type == "premium"
     prompt = _build_prompt(topic, slides, language, style, color, is_premium)
 
     try:
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.8,
-            max_tokens=4000,
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
+        response = await asyncio.to_thread(
+            model.generate_content,
+            prompt,
+            generation_config={
+                "temperature": 0.8,
+                "max_output_tokens": 4000,
+            },
         )
-        raw = response.choices[0].message.content or ""
-        # Strip possible ```json fences
+
+        raw = response.text or ""
         raw = re.sub(r"```(?:json)?", "", raw).strip()
         data = json.loads(raw)
         return data
+
     except json.JSONDecodeError as e:
         logger.error(f"AI JSON parse error: {e}")
         return None
@@ -117,8 +108,7 @@ async def generate_presentation(
         return None
 
 
-def format_presentation_text(data: dict, is_premium: bool = False) -> str:
-    """Convert presentation dict to nicely formatted Telegram message."""
+def format_presentation_text(data, is_premium=False):
     lines = [f"✨ <b>{data.get('title', 'Taqdimot')}</b>\n"]
 
     for slide in data.get("slides", []):
@@ -129,7 +119,7 @@ def format_presentation_text(data: dict, is_premium: bool = False) -> str:
         image = slide.get("image_suggestion", "")
         notes = slide.get("speaker_notes", "")
 
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━")
+        lines.append("━━━━━━━━━━━━━━━━━━━━")
         lines.append(f"📌 <b>Slayd {num}: {title}</b>")
         lines.append(f"\n{content}")
 
