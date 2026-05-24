@@ -31,52 +31,66 @@ COLOR_LABEL = {
 
 
 def _build_prompt(topic, slides, language, style, color, is_premium):
-    lang_instruction = LANG_MAP.get(language, "in English")
+    lang_instruction = LANG_MAP.get(language, "O'zbek tilida")
     style_instruction = STYLE_MAP.get(style, "professional")
-    color_instruction = COLOR_LABEL.get(color, "Ko'k")
+    color_instruction = COLOR_LABEL.get(color, "Ko'k rang sxemasi")
 
     detail_note = (
-        "Har bir slaydda batafsil matn, kalit fikrlar, statistika/misollar, "
-        "tavsiya etilgan rasm/ikonka tavsifini ham yozing."
+        "Har bir slaydda batafsil matn, kalit fikrlar, misollar, "
+        "tavsiya etilgan rasm/ikonka tavsifi va notiq eslatmasini yozing."
         if is_premium
-        else "Har bir slaydda qisqa, aniq professional matn yozing."
+        else "Har bir slaydda qisqa, aniq va professional matn yozing."
     )
 
-    return f"""Siz professional taqdimot yaratuvchi AI assistantsiz.
+    return f"""
+Siz professional taqdimot yaratuvchi AI assistantsiz.
 
-Quyidagi ma'lumotlar asosida {slides} ta slayddan iborat yuqori sifatli taqdimot yarating:
+Quyidagi ma'lumotlar asosida {slides} ta slayddan iborat taqdimot yarating:
 
-- Mavzu: {topic}
-- Til: {lang_instruction}
-- Uslub: {style_instruction}
-- Rang sxemasi: {color_instruction}
-- {detail_note}
+Mavzu: {topic}
+Til: {lang_instruction}
+Uslub: {style_instruction}
+Rang sxemasi: {color_instruction}
+Qo'shimcha talab: {detail_note}
 
-MUHIM: Faqat JSON formatida javob bering. Boshqa hech narsa yozmang.
+FAQAT TOZA JSON QAYTARING.
+Markdown, izoh, ```json belgilarini yozmang.
 
-JSON tuzilishi:
+JSON namunasi:
+
 {{
   "title": "Taqdimot sarlavhasi",
   "slides": [
     {{
       "number": 1,
       "title": "Slayd sarlavhasi",
-      "content": "Asosiy matn (3-5 gap)",
-      "key_points": ["Kalit fikr 1", "Kalit fikr 2", "Kalit fikr 3"],
-      "image_suggestion": "Tavsiya etilgan rasm tavsifi",
-      "speaker_notes": "Notiqqa eslatma"
+      "content": "Asosiy matn 3-5 gapdan iborat bo'lsin.",
+      "key_points": [
+        "Kalit fikr 1",
+        "Kalit fikr 2",
+        "Kalit fikr 3"
+      ],
+      "image_suggestion": "Rasm yoki ikonka tavsifi",
+      "speaker_notes": "Notiq uchun qisqa eslatma"
     }}
   ]
 }}
 
-Slayd tuzilishi:
-- 1-slayd: Sarlavha va kirish
-- 2-slayd: Mavzuning ahamiyati
-- 3-slayd: Asosiy tushunchalar
-- O'rta slaydlar: Batafsil bo'limlar
-- Oxirgi slayd: Xulosa va rahmat
+Slaydlar soni aynan {slides} ta bo'lsin.
+"""
 
-Faqat JSON qaytaring, markdown yoki boshqa format bo'lmasin."""
+
+def _clean_json_text(raw: str) -> str:
+    raw = raw.strip()
+    raw = re.sub(r"```json", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"```", "", raw)
+    raw = raw.strip()
+
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if match:
+        raw = match.group(0)
+
+    return raw
 
 
 async def generate_presentation(topic, slides, language, style, color, output_type):
@@ -84,25 +98,37 @@ async def generate_presentation(topic, slides, language, style, color, output_ty
     prompt = _build_prompt(topic, slides, language, style, color, is_premium)
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
 
         response = await asyncio.to_thread(
             model.generate_content,
             prompt,
             generation_config={
-                "temperature": 0.8,
+                "temperature": 0.7,
                 "max_output_tokens": 4000,
+                "response_mime_type": "application/json",
             },
         )
 
         raw = response.text or ""
-        raw = re.sub(r"```(?:json)?", "", raw).strip()
-        data = json.loads(raw)
+        logger.info(f"Gemini raw response: {raw}")
+
+        cleaned = _clean_json_text(raw)
+        data = json.loads(cleaned)
+
+        if "title" not in data:
+            data["title"] = topic
+
+        if "slides" not in data or not isinstance(data["slides"], list):
+            logger.error("Gemini response does not contain slides list")
+            return None
+
         return data
 
     except json.JSONDecodeError as e:
         logger.error(f"AI JSON parse error: {e}")
         return None
+
     except Exception as e:
         logger.error(f"AI generation error: {e}")
         return None
