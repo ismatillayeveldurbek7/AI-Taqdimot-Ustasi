@@ -295,7 +295,7 @@ async def confirm_and_generate(callback: CallbackQuery, state: FSMContext) -> No
     else:
         # PPTX
         try:
-            pptx_bytes = generate_pptx(presentation_data, color_scheme=data["color"])
+            pptx_bytes = await generate_pptx(presentation_data, color_scheme=data["color"])
             file_name = f"{data['topic'][:30].replace(' ', '_')}.pptx"
             doc = BufferedInputFile(pptx_bytes, filename=file_name)
             sent = await callback.message.answer_document(
