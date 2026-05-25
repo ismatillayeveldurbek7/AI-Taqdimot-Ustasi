@@ -7,13 +7,11 @@ Retry, timeout, fallback, aniq log.
 import json
 import re
 import asyncio
-import time
-from typing import Optional
-from openai import AsyncOpenAI, APIError, APITimeoutError, RateLimitError
-from config import OPENAI_API_KEY
-from utils.logger import logger
+import google.generativeai as genai
+from config import GEMINI_API_KEY
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY, timeout=60.0)
+genai.configure(api_key=GEMINI_API_KEY)
+
 
 # Modellar (birinchisidan boshlab sinab ko'riladi)
 OPENAI_MODELS = [
