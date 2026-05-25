@@ -133,3 +133,32 @@ Format:
                 }
             ]
         }
+
+
+def format_presentation_text(data: dict, is_premium: bool = False) -> str:
+    """
+    Presentation ma'lumotlarini HTML formatli matnga o'giradi.
+    """
+    title = data.get("title", "Taqdimot")
+    slides = data.get("slides", [])
+
+    lines = [f"🎨 <b>{title}</b>\n"]
+
+    for slide in slides:
+        num = slide.get("number", "")
+        stitle = slide.get("title", "")
+        content = slide.get("content", "")
+        key_points = slide.get("key_points", [])
+        speaker_notes = slide.get("speaker_notes", "")
+
+        lines.append(f"\n<b>━━━ Slayd {num}: {stitle} ━━━</b>")
+        if content:
+            lines.append(f"{content}")
+        if key_points:
+            lines.append("\n📌 <b>Asosiy fikrlar:</b>")
+            for point in key_points:
+                lines.append(f"  • {point}")
+        if is_premium and speaker_notes:
+            lines.append(f"\n🎤 <i>Izoh: {speaker_notes}</i>")
+
+    return "\n".join(lines)
