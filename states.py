@@ -39,7 +39,3 @@ class AdminStates(StatesGroup):
 
     # Block user
     block_user_id = State()
-
-
-class RejectPaymentStates(StatesGroup):
-    waiting_reason = State()   # Admin ixtiyoriy qayd yozadi

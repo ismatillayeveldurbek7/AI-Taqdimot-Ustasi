@@ -47,7 +47,6 @@ class Payment(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending/approved/rejected
     receipt_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     admin_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 

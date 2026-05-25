@@ -1,199 +1,149 @@
-"""
-AI Taqdimot Ustasi — AI Service (OpenAI ChatGPT)
-Modellar: gpt-4o-mini (asosiy) → gpt-3.5-turbo (fallback)
-Retry, timeout, fallback, aniq log.
-"""
-
 import json
 import re
 import asyncio
 import google.generativeai as genai
 from config import GEMINI_API_KEY
+from utils.logger import logger
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-
-# Modellar (birinchisidan boshlab sinab ko'riladi)
-OPENAI_MODELS = [
-    "gpt-4o-mini",
-    "gpt-3.5-turbo",
-]
-
 LANG_MAP = {
-    "uzbek":   "O'zbek tilida yoz",
-    "russian": "Пиши на русском языке",
-    "english": "Write in English",
+    "uzbek": "O'zbek tilida",
+    "russian": "на русском языке",
+    "english": "in English",
 }
 
 STYLE_MAP = {
-    "Academic":    "akademik uslubda, rasmiy va ilmiy",
-    "Business":    "biznes uslubda, professional va aniq",
-    "Creative":    "ijodiy uslubda, qiziqarli va innovatsion",
+    "Academic": "akademik uslubda, rasmiy va ilmiy",
+    "Business": "biznes uslubda, professional va aniq",
+    "Creative": "ijodiy uslubda, qiziqarli va innovatsion",
     "Educational": "ta'limiy uslubda, tushuntiruvchi va oddiy",
-    "Minimal":     "minimal uslubda, qisqa va lo'nda",
+    "Minimal": "minimal uslubda, qisqa va lo'nda",
 }
 
 COLOR_LABEL = {
-    "Blue":        "Ko'k rang sxemasi",
-    "Black":       "Qora rang sxemasi",
-    "White":       "Oq rang sxemasi",
-    "Green":       "Yashil rang sxemasi",
+    "Blue": "Ko'k rang sxemasi",
+    "Black": "Qora rang sxemasi",
+    "White": "Oq rang sxemasi",
+    "Green": "Yashil rang sxemasi",
     "PremiumDark": "Premium qoʻngʻir-qora rang sxemasi",
 }
 
 
-def _build_messages(topic: str, slides: int, language: str,
-                    style: str, color: str, is_premium: bool) -> list:
-    lang  = LANG_MAP.get(language, "O'zbek tilida yoz")
-    styl  = STYLE_MAP.get(style,   "professional")
-    clr   = COLOR_LABEL.get(color, "Ko'k rang sxemasi")
+def _build_prompt(topic, slides, language, style, color, is_premium):
+    lang_instruction = LANG_MAP.get(language, "O'zbek tilida")
+    style_instruction = STYLE_MAP.get(style, "professional")
+    color_instruction = COLOR_LABEL.get(color, "Ko'k rang sxemasi")
 
-    detail = (
-        "Har bir slaydda batafsil matn (5-7 gap), 4 ta kalit fikr, "
-        "rasm tavsifi va notiq eslatmasini yozing."
-        if is_premium else
-        "Har bir slaydda qisqa, aniq va professional matn (3-4 gap), 3 ta kalit fikr."
+    detail_note = (
+        "Har bir slaydda batafsil matn, kalit fikrlar, misollar, "
+        "tavsiya etilgan rasm/ikonka tavsifi va notiq eslatmasini yozing."
+        if is_premium
+        else "Har bir slaydda qisqa, aniq va professional matn yozing."
     )
 
-    system_prompt = (
-        "Sen professional taqdimot yaratuvchi AI assistantsan. "
-        "FAQAT toza JSON qaytarasan — markdown, izoh, ``` belgilar YO'Q. "
-        f"Til: {lang}."
-    )
+    return f"""
+Siz professional taqdimot yaratuvchi AI assistantsiz.
 
-    user_prompt = f"""Quyidagi ma'lumotlar asosida {slides} ta slayddan iborat taqdimot yaratamiz:
+Quyidagi ma'lumotlar asosida {slides} ta slayddan iborat taqdimot yarating:
 
 Mavzu: {topic}
-Uslub: {styl}
-Rang sxemasi: {clr}
-Talab: {detail}
+Til: {lang_instruction}
+Uslub: {style_instruction}
+Rang sxemasi: {color_instruction}
+Qo'shimcha talab: {detail_note}
 
-FAQAT bu JSON tuzilmasida qaytaras (boshqa hech narsa yozma):
+FAQAT TOZA JSON QAYTARING.
+Markdown, izoh, ```json belgilarini yozmang.
+
+JSON namunasi:
+
 {{
   "title": "Taqdimot sarlavhasi",
   "slides": [
     {{
       "number": 1,
       "title": "Slayd sarlavhasi",
-      "content": "Asosiy matn.",
-      "key_points": ["Kalit fikr 1", "Kalit fikr 2", "Kalit fikr 3"],
-      "image_suggestion": "Rasm tavsifi",
-      "speaker_notes": "Notiq eslatmasi"
+      "content": "Asosiy matn 3-5 gapdan iborat bo'lsin.",
+      "key_points": [
+        "Kalit fikr 1",
+        "Kalit fikr 2",
+        "Kalit fikr 3"
+      ],
+      "image_suggestion": "Rasm yoki ikonka tavsifi",
+      "speaker_notes": "Notiq uchun qisqa eslatma"
     }}
   ]
 }}
 
-Slaydlar soni AYNAN {slides} ta. Birinchi slayd — kirish/muqova."""
-
-    return [
-        {"role": "system", "content": system_prompt},
-        {"role": "user",   "content": user_prompt},
-    ]
+Slaydlar soni aynan {slides} ta bo'lsin.
+"""
 
 
-def _clean_json(raw: str) -> str:
+def _clean_json_text(raw: str) -> str:
     raw = raw.strip()
-    raw = re.sub(r"```json\s*", "", raw, flags=re.IGNORECASE)
-    raw = re.sub(r"```\s*",    "", raw)
+    raw = re.sub(r"```json", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"```", "", raw)
     raw = raw.strip()
+
     match = re.search(r"\{.*\}", raw, re.DOTALL)
     if match:
         raw = match.group(0)
+
     return raw
 
 
-async def generate_presentation(
-    topic: str, slides: int, language: str,
-    style: str, color: str, output_type: str,
-) -> Optional[dict]:
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY topilmadi! .env faylini tekshiring.")
+async def generate_presentation(topic, slides, language, style, color, output_type):
+    is_premium = output_type == "premium"
+    prompt = _build_prompt(topic, slides, language, style, color, is_premium)
+
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+
+        response = await asyncio.to_thread(
+            model.generate_content,
+            prompt,
+            generation_config={
+                "temperature": 0.7,
+                "max_output_tokens": 4000,
+                "response_mime_type": "application/json",
+            },
+        )
+
+        raw = response.text or ""
+        logger.info(f"Gemini raw response: {raw}")
+
+        cleaned = _clean_json_text(raw)
+        data = json.loads(cleaned)
+
+        if "title" not in data:
+            data["title"] = topic
+
+        if "slides" not in data or not isinstance(data["slides"], list):
+            logger.error("Gemini response does not contain slides list")
+            return None
+
+        return data
+
+    except json.JSONDecodeError as e:
+        logger.error(f"AI JSON parse error: {e}")
         return None
 
-    is_premium = output_type == "premium"
-    messages   = _build_messages(topic, slides, language, style, color, is_premium)
-    last_error = None
-
-    for model_name in OPENAI_MODELS:
-        for attempt in range(2):
-            try:
-                logger.info(f"OpenAI urinish: model={model_name}, attempt={attempt+1}")
-                t0 = time.time()
-
-                response = await client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    temperature=0.7,
-                    max_tokens=4096,
-                    response_format={"type": "json_object"},
-                )
-
-                elapsed = time.time() - t0
-                raw     = (response.choices[0].message.content or "").strip()
-                logger.info(f"OpenAI javob ({elapsed:.1f}s, {len(raw)} belgi): {raw[:200]}")
-
-                if not raw:
-                    last_error = "Bo'sh javob"
-                    continue
-
-                data = json.loads(_clean_json(raw))
-
-                data.setdefault("title", topic)
-                if "slides" not in data or not isinstance(data["slides"], list) or len(data["slides"]) == 0:
-                    last_error = "slides yo'q yoki bo'sh"
-                    continue
-
-                for i, s in enumerate(data["slides"]):
-                    s.setdefault("number",           i + 1)
-                    s.setdefault("title",            f"Slayd {i+1}")
-                    s.setdefault("content",          "")
-                    s.setdefault("key_points",       [])
-                    s.setdefault("image_suggestion", "")
-                    s.setdefault("speaker_notes",    "")
-
-                logger.info(f"✅ AI muvaffaqiyatli: {len(data['slides'])} slayd ({model_name})")
-                return data
-
-            except RateLimitError:
-                logger.warning(f"{model_name}: Rate limit — keyingi modelga o'tmoqda")
-                last_error = "Rate limit"
-                break
-
-            except APITimeoutError:
-                logger.warning(f"{model_name} attempt {attempt+1}: Timeout")
-                last_error = "Timeout"
-
-            except json.JSONDecodeError as e:
-                logger.warning(f"{model_name} attempt {attempt+1}: JSON xatosi: {e}")
-                last_error = f"JSON xatosi: {e}"
-
-            except APIError as e:
-                logger.warning(f"{model_name} attempt {attempt+1}: APIError: {e}")
-                last_error = str(e)
-                if e.status_code in (401, 403, 404):
-                    break  # API key noto'g'ri yoki model yo'q — retry qilma
-
-            except Exception as e:
-                logger.warning(f"{model_name} attempt {attempt+1}: {e}")
-                last_error = str(e)
-
-            if attempt == 0:
-                await asyncio.sleep(1.5)
-        await asyncio.sleep(0.5)
-
-    logger.error(f"❌ Barcha modellar xato berdi. Oxirgi xato: {last_error}")
-    return None
+    except Exception as e:
+        logger.error(f"AI generation error: {e}")
+        return None
 
 
-def format_presentation_text(data: dict, is_premium: bool = False) -> str:
+def format_presentation_text(data, is_premium=False):
     lines = [f"✨ <b>{data.get('title', 'Taqdimot')}</b>\n"]
+
     for slide in data.get("slides", []):
-        num        = slide.get("number", "")
-        title      = slide.get("title",  "")
-        content    = slide.get("content","")
+        num = slide.get("number", "")
+        title = slide.get("title", "")
+        content = slide.get("content", "")
         key_points = slide.get("key_points", [])
-        image      = slide.get("image_suggestion", "")
-        notes      = slide.get("speaker_notes",    "")
+        image = slide.get("image_suggestion", "")
+        notes = slide.get("speaker_notes", "")
 
         lines.append("━━━━━━━━━━━━━━━━━━━━")
         lines.append(f"📌 <b>Slayd {num}: {title}</b>")
@@ -209,6 +159,7 @@ def format_presentation_text(data: dict, is_premium: bool = False) -> str:
                 lines.append(f"\n🖼 <i>Rasm tavsiyasi: {image}</i>")
             if notes:
                 lines.append(f"🎤 <i>Notiq eslatmasi: {notes}</i>")
+
         lines.append("")
 
     return "\n".join(lines)
