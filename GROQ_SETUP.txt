@@ -1,0 +1,11 @@
+1. Groq API key oling:
+https://console.groq.com/keys
+
+2. services/ai_service.py ichida:
+YOUR_GROQ_API_KEY
+o'rniga API key qo'ying.
+
+3. Railway redeploy qiling.
+
+Recommended model:
+llama3-70b-8192

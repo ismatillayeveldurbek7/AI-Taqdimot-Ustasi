@@ -1,35 +1,8 @@
 
-import random
+import json
+import aiohttp
 
-DESIGNS = [
-    "Modern Blue",
-    "Premium Dark",
-    "Minimal White",
-    "Gradient Purple",
-    "Business Clean",
-    "Creative Neon",
-    "Elegant Gold",
-]
-
-SLIDE_STRUCTURES = [
-    "Kirish",
-    "Asosiy tushuncha",
-    "Muhim faktlar",
-    "Amaliy qo'llanilishi",
-    "Statistika va tahlil",
-    "Afzalliklari",
-    "Kamchiliklari",
-    "Xulosa"
-]
-
-IMAGE_STYLES = [
-    "professional illustration",
-    "cinematic scene",
-    "modern infographic",
-    "business presentation style",
-    "3D render",
-    "high quality educational image",
-]
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 async def generate_presentation(
     topic,
@@ -40,44 +13,96 @@ async def generate_presentation(
     output_type,
 ):
 
-    selected_design = random.choice(DESIGNS)
+    headers = {
+        "Authorization": "Bearer YOUR_GROQ_API_KEY",
+        "Content-Type": "application/json"
+    }
 
-    generated_slides = []
+    prompt = f"""
+Create a professional PowerPoint presentation.
 
-    for i in range(1, slides + 1):
+Topic: {topic}
 
-        section = SLIDE_STRUCTURES[(i - 1) % len(SLIDE_STRUCTURES)]
+Slides count: {slides}
 
-        paragraph = f"""
-{topic} mavzusining {section.lower()} qismi.
+Requirements:
+- professional text
+- educational structure
+- premium slide titles
+- image suggestions
+- detailed content
+- modern presentation style
 
-Bu slaydda {topic} bo‘yicha muhim ma’lumotlar, zamonaviy yondashuvlar,
-amaliy misollar va professional tushuntirishlar beriladi.
+Return ONLY valid JSON.
 
-{topic} bugungi kunda ta’lim, texnologiya va biznes sohalarida keng
-qo‘llanilmoqda. Ushbu mavzu zamonaviy rivojlanishning muhim qismlaridan biridir.
+Format:
+
+{{
+  "title": "Presentation title",
+  "slides": [
+    {{
+      "number": 1,
+      "title": "Slide title",
+      "content": "Slide content",
+      "key_points": ["Point 1", "Point 2"],
+      "image_suggestion": "Professional image idea",
+      "speaker_notes": "Speaker notes"
+    }}
+  ]
+}}
 """
 
-        generated_slides.append({
-            "number": i,
-            "title": f"{section}: {topic}",
-            "content": paragraph,
-            "key_points": [
-                f"{topic} asoslari",
-                f"{topic} bo‘yicha professional ma’lumot",
-                f"{topic} amaliy qo‘llanilishi",
-                f"{topic} zamonaviy texnologiyalar bilan bog‘liqligi"
-            ],
-            "image_suggestion": f"{topic} {random.choice(IMAGE_STYLES)}",
-            "speaker_notes": f"{topic} haqida professional tushuntirish.",
-            "design": selected_design
-        })
-
-    return {
-        "title": topic,
-        "design": selected_design,
-        "slides": generated_slides
+    payload = {
+        "model": "llama3-70b-8192",
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "temperature": 0.7
     }
+
+    try:
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                GROQ_API_URL,
+                headers=headers,
+                json=payload
+            ) as response:
+
+                data = await response.json()
+
+                content = data["choices"][0]["message"]["content"]
+
+                try:
+                    parsed = json.loads(content)
+                    return parsed
+
+                except:
+                    return {
+                        "title": topic,
+                        "slides": [
+                            {
+                                "number": 1,
+                                "title": "AI Response",
+                                "content": content
+                            }
+                        ]
+                    }
+
+    except Exception as e:
+        return {
+            "title": "Error",
+            "slides": [
+                {
+                    "number": 1,
+                    "title": "Groq Error",
+                    "content": str(e)
+                }
+            ]
+        }
 
 async def format_presentation_text(data):
     return data
