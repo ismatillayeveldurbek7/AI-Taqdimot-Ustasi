@@ -50,11 +50,26 @@ def paid_kb(package_id: int) -> InlineKeyboardMarkup:
 
 
 def admin_payment_kb(payment_id: int) -> InlineKeyboardMarkup:
+    """Admin uchun to'lovni tasdiqlash / rad etish tugmalari."""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_pay:{payment_id}"),
-        InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_pay:{payment_id}"),
+        InlineKeyboardButton(text="❌ Rad etish",  callback_data=f"reject_pay:{payment_id}"),
     )
+    return builder.as_markup()
+
+
+def reject_reason_kb(payment_id: int) -> InlineKeyboardMarkup:
+    """Rad etishda qayd yozish yoki o'tkazib yuborish."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="➡️ Qaydsiz rad etish",
+        callback_data=f"reject_noreason:{payment_id}",
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🚫 Bekor qilish",
+        callback_data=f"reject_cancel:{payment_id}",
+    ))
     return builder.as_markup()
 
 
@@ -63,7 +78,7 @@ def admin_payment_kb(payment_id: int) -> InlineKeyboardMarkup:
 def language_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="🇺🇿 O'zbek", callback_data="lang:uzbek"),
+        InlineKeyboardButton(text="🇺🇿 O'zbek",  callback_data="lang:uzbek"),
         InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang:russian"),
         InlineKeyboardButton(text="🇬🇧 English", callback_data="lang:english"),
     )
@@ -74,10 +89,10 @@ def language_kb() -> InlineKeyboardMarkup:
 def style_kb() -> InlineKeyboardMarkup:
     styles = [
         ("🎓 Akademik", "Academic"),
-        ("💼 Biznes", "Business"),
-        ("🎨 Ijodiy", "Creative"),
+        ("💼 Biznes",   "Business"),
+        ("🎨 Ijodiy",   "Creative"),
         ("📚 Ta'limiy", "Educational"),
-        ("⬜ Minimal", "Minimal"),
+        ("⬜ Minimal",  "Minimal"),
     ]
     builder = InlineKeyboardBuilder()
     for label, val in styles:
@@ -89,10 +104,10 @@ def style_kb() -> InlineKeyboardMarkup:
 
 def color_kb() -> InlineKeyboardMarkup:
     colors = [
-        ("🔵 Ko'k", "Blue"),
-        ("⚫ Qora", "Black"),
-        ("⚪ Oq", "White"),
-        ("🟢 Yashil", "Green"),
+        ("🔵 Ko'k",        "Blue"),
+        ("⚫ Qora",         "Black"),
+        ("⚪ Oq",           "White"),
+        ("🟢 Yashil",       "Green"),
         ("🌑 Premium qora", "PremiumDark"),
     ]
     builder = InlineKeyboardBuilder()
@@ -105,17 +120,17 @@ def color_kb() -> InlineKeyboardMarkup:
 
 def output_type_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="📝 Faqat matn — 5 coin", callback_data="output:text"))
-    builder.row(InlineKeyboardButton(text="📊 PPTX fayl — 10 coin", callback_data="output:pptx"))
+    builder.row(InlineKeyboardButton(text="📝 Faqat matn — 5 coin",      callback_data="output:text"))
+    builder.row(InlineKeyboardButton(text="📊 PPTX fayl — 10 coin",      callback_data="output:pptx"))
     builder.row(InlineKeyboardButton(text="⭐ Premium batafsil — 15 coin", callback_data="output:premium"))
-    builder.row(InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_pres"))
+    builder.row(InlineKeyboardButton(text="❌ Bekor qilish",               callback_data="cancel_pres"))
     return builder.as_markup()
 
 
 def confirm_presentation_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="✅ Tasdiqlash", callback_data="confirm_pres"),
+        InlineKeyboardButton(text="✅ Tasdiqlash",   callback_data="confirm_pres"),
         InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_pres"),
     )
     return builder.as_markup()
@@ -127,19 +142,19 @@ def admin_main_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="👥 Foydalanuvchilar", callback_data="adm:users"),
-        InlineKeyboardButton(text="💰 To'lovlar", callback_data="adm:payments"),
+        InlineKeyboardButton(text="💰 To'lovlar",        callback_data="adm:payments"),
     )
     builder.row(
-        InlineKeyboardButton(text="✅ Kutilayotgan", callback_data="adm:pending"),
-        InlineKeyboardButton(text="🪙 Coin boshqarish", callback_data="adm:coins"),
+        InlineKeyboardButton(text="✅ Kutilayotgan",     callback_data="adm:pending"),
+        InlineKeyboardButton(text="🪙 Coin boshqarish",  callback_data="adm:coins"),
     )
     builder.row(
-        InlineKeyboardButton(text="📢 Xabar yuborish", callback_data="adm:broadcast"),
-        InlineKeyboardButton(text="🚫 Bloklash", callback_data="adm:block"),
+        InlineKeyboardButton(text="📢 Xabar yuborish",  callback_data="adm:broadcast"),
+        InlineKeyboardButton(text="🚫 Bloklash",         callback_data="adm:block"),
     )
     builder.row(
-        InlineKeyboardButton(text="📊 Statistika", callback_data="adm:stats"),
-        InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="adm:settings"),
+        InlineKeyboardButton(text="📊 Statistika",   callback_data="adm:stats"),
+        InlineKeyboardButton(text="⚙️ Sozlamalar",   callback_data="adm:settings"),
     )
     builder.row(InlineKeyboardButton(text="🧾 Paketlarni tahrirlash", callback_data="adm:packages"))
     return builder.as_markup()
@@ -149,7 +164,7 @@ def admin_coins_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="➕ Coin qo'shish", callback_data="adm:add_coins"),
-        InlineKeyboardButton(text="➖ Coin olish", callback_data="adm:remove_coins"),
+        InlineKeyboardButton(text="➖ Coin olish",    callback_data="adm:remove_coins"),
     )
     builder.row(InlineKeyboardButton(text="◀️ Orqaga", callback_data="adm:back"))
     return builder.as_markup()
@@ -158,8 +173,8 @@ def admin_coins_kb() -> InlineKeyboardMarkup:
 def admin_settings_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="💳 Karta raqamini o'zgartirish", callback_data="adm:card_number"))
-    builder.row(InlineKeyboardButton(text="👤 Karta egasini o'zgartirish", callback_data="adm:card_owner"))
-    builder.row(InlineKeyboardButton(text="◀️ Orqaga", callback_data="adm:back"))
+    builder.row(InlineKeyboardButton(text="👤 Karta egasini o'zgartirish",  callback_data="adm:card_owner"))
+    builder.row(InlineKeyboardButton(text="◀️ Orqaga",                      callback_data="adm:back"))
     return builder.as_markup()
 
 
@@ -174,13 +189,13 @@ def admin_packages_kb(packages: list[CoinPackage]) -> InlineKeyboardMarkup:
             )
         )
     builder.row(InlineKeyboardButton(text="➕ Yangi paket", callback_data="adm:pkg_new"))
-    builder.row(InlineKeyboardButton(text="◀️ Orqaga", callback_data="adm:back"))
+    builder.row(InlineKeyboardButton(text="◀️ Orqaga",      callback_data="adm:back"))
     return builder.as_markup()
 
 
 def admin_pkg_edit_kb(pkg_id: int, is_active: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="✏️ Narxni o'zgartirish", callback_data=f"adm:pkg_price:{pkg_id}"))
+    builder.row(InlineKeyboardButton(text="✏️ Narxni o'zgartirish",         callback_data=f"adm:pkg_price:{pkg_id}"))
     builder.row(InlineKeyboardButton(text="✏️ Coin miqdorini o'zgartirish", callback_data=f"adm:pkg_coins:{pkg_id}"))
     toggle_label = "❌ O'chirish" if is_active else "✅ Yoqish"
     builder.row(InlineKeyboardButton(text=toggle_label, callback_data=f"adm:pkg_toggle:{pkg_id}"))
