@@ -1,24 +1,28 @@
+"""
+AI Taqdimot Ustasi — Groq AI + Google Image Search servisi
+"""
+
 import json
 import re
 import asyncio
-import google.generativeai as genai
-from config import GEMINI_API_KEY
-from utils.logger import logger
+import aiohttp
+from config import GROQ_API_KEY, GROQ_MODEL, GOOGLE_API_KEY, GOOGLE_CX
 
-genai.configure(api_key=GEMINI_API_KEY)
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GOOGLE_SEARCH_URL = "https://www.googleapis.com/customsearch/v1"
 
 LANG_MAP = {
-    "uzbek": "O'zbek tilida",
-    "russian": "на русском языке",
-    "english": "in English",
+    "uzbek": "O'zbek tilida yoz",
+    "russian": "Напиши на русском языке",
+    "english": "Write in English",
 }
 
 STYLE_MAP = {
-    "Academic": "akademik uslubda, rasmiy va ilmiy",
-    "Business": "biznes uslubda, professional va aniq",
-    "Creative": "ijodiy uslubda, qiziqarli va innovatsion",
-    "Educational": "ta'limiy uslubda, tushuntiruvchi va oddiy",
-    "Minimal": "minimal uslubda, qisqa va lo'nda",
+    "Academic": "akademik uslubda, rasmiy va ilmiy tilda",
+    "Business": "biznes uslubda, professional va aniq tilda",
+    "Creative": "ijodiy uslubda, qiziqarli va innovatsion tilda",
+    "Educational": "ta'limiy uslubda, tushuntiruvchi va oddiy tilda",
+    "Minimal": "minimal uslubda, qisqa va lo'nda tilda",
 }
 
 COLOR_LABEL = {
@@ -26,37 +30,105 @@ COLOR_LABEL = {
     "Black": "Qora rang sxemasi",
     "White": "Oq rang sxemasi",
     "Green": "Yashil rang sxemasi",
-    "PremiumDark": "Premium qoʻngʻir-qora rang sxemasi",
+    "PremiumDark": "Premium qora rang sxemasi",
 }
 
 
-def _build_prompt(topic, slides, language, style, color, is_premium):
-    lang_instruction = LANG_MAP.get(language, "O'zbek tilida")
-    style_instruction = STYLE_MAP.get(style, "professional")
-    color_instruction = COLOR_LABEL.get(color, "Ko'k rang sxemasi")
+def clean_json(text: str) -> str:
+    text = text.strip()
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```\s*", "", text)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    return match.group(0) if match else text
 
-    detail_note = (
-        "Har bir slaydda batafsil matn, kalit fikrlar, misollar, "
-        "tavsiya etilgan rasm/ikonka tavsifi va notiq eslatmasini yozing."
-        if is_premium
-        else "Har bir slaydda qisqa, aniq va professional matn yozing."
+
+async def search_image(query: str) -> str | None:
+    """
+    Google Custom Search API orqali rasm URL qaytaradi.
+    GOOGLE_API_KEY va GOOGLE_CX .env da bo'lishi kerak.
+    """
+    if not GOOGLE_API_KEY or not GOOGLE_CX:
+        return None
+    try:
+        params = {
+            "key": GOOGLE_API_KEY,
+            "cx": GOOGLE_CX,
+            "q": query,
+            "searchType": "image",
+            "num": 1,
+            "safe": "active",
+            "imgType": "photo",
+            "imgSize": "large",
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                GOOGLE_SEARCH_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    items = data.get("items", [])
+                    if items:
+                        return items[0].get("link")
+    except Exception:
+        pass
+    return None
+
+
+async def fetch_slide_images(slides: list, topic: str) -> list:
+    """Har bir slayd uchun Google dan rasm topadi."""
+    tasks = []
+    for slide in slides:
+        suggestion = slide.get("image_suggestion", "")
+        query = f"{suggestion} {topic}" if suggestion else f"{slide.get('title', topic)} professional"
+        tasks.append(search_image(query))
+
+    urls = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for slide, url in zip(slides, urls):
+        if isinstance(url, str):
+            slide["image_url"] = url
+        else:
+            slide["image_url"] = None
+
+    return slides
+
+
+async def generate_presentation(
+    topic: str,
+    slides: int,
+    language: str,
+    style: str,
+    color: str,
+    output_type: str,
+) -> dict | None:
+
+    lang_instruction = LANG_MAP.get(language, "O'zbek tilida yoz")
+    style_text = STYLE_MAP.get(style, "professional uslubda")
+    color_text = COLOR_LABEL.get(color, "Ko'k")
+
+    detail = (
+        "Har bir slayd juda batafsil, keng qamrovli va chuqur bo'lsin. "
+        "speaker_notes da to'liq nutq matni bo'lsin."
+        if output_type == "premium"
+        else "Har bir slayd professional, aniq va qisqa bo'lsin."
     )
 
-    return f"""
-Siz professional taqdimot yaratuvchi AI assistantsiz.
+    system_prompt = (
+        "Sen professional presentation yaratuvchi AI assistantsan. "
+        "Faqat valid JSON qaytarasan, boshqa hech narsa yozma."
+    )
 
-Quyidagi ma'lumotlar asosida {slides} ta slayddan iborat taqdimot yarating:
+    user_prompt = f"""
+{lang_instruction}.
 
 Mavzu: {topic}
-Til: {lang_instruction}
-Uslub: {style_instruction}
-Rang sxemasi: {color_instruction}
-Qo'shimcha talab: {detail_note}
+Slaydlar soni: {slides}
+Uslub: {style_text}
+Rang sxemasi: {color_text}
 
-FAQAT TOZA JSON QAYTARING.
-Markdown, izoh, ```json belgilarini yozmang.
+Talab: {detail}
 
-JSON namunasi:
+Faqat quyidagi JSON formatda qaytargin:
 
 {{
   "title": "Taqdimot sarlavhasi",
@@ -64,102 +136,102 @@ JSON namunasi:
     {{
       "number": 1,
       "title": "Slayd sarlavhasi",
-      "content": "Asosiy matn 3-5 gapdan iborat bo'lsin.",
-      "key_points": [
-        "Kalit fikr 1",
-        "Kalit fikr 2",
-        "Kalit fikr 3"
-      ],
-      "image_suggestion": "Rasm yoki ikonka tavsifi",
-      "speaker_notes": "Notiq uchun qisqa eslatma"
+      "content": "Asosiy kontent (2-4 gap)",
+      "key_points": ["Nuqta 1", "Nuqta 2", "Nuqta 3"],
+      "image_suggestion": "Rasm uchun qidiruv so'zi (inglizcha)",
+      "speaker_notes": "Nutq matni"
     }}
   ]
 }}
-
-Slaydlar soni aynan {slides} ta bo'lsin.
 """
 
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
-def _clean_json_text(raw: str) -> str:
-    raw = raw.strip()
-    raw = re.sub(r"```json", "", raw, flags=re.IGNORECASE)
-    raw = re.sub(r"```", "", raw)
-    raw = raw.strip()
-
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    if match:
-        raw = match.group(0)
-
-    return raw
-
-
-async def generate_presentation(topic, slides, language, style, color, output_type):
-    is_premium = output_type == "premium"
-    prompt = _build_prompt(topic, slides, language, style, color, is_premium)
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 4096,
+    }
 
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                GROQ_API_URL,
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    return {
+                        "title": "Xatolik",
+                        "slides": [{"number": 1, "title": "Groq API xato",
+                                    "content": f"Status {resp.status}: {error_text[:300]}"}]
+                    }
 
-        response = await asyncio.to_thread(
-            model.generate_content,
-            prompt,
-            generation_config={
-                "temperature": 0.7,
-                "max_output_tokens": 4000,
-                "response_mime_type": "application/json",
-            },
-        )
+                data = await resp.json()
+                content = data["choices"][0]["message"]["content"]
 
-        raw = response.text or ""
-        logger.info(f"Gemini raw response: {raw}")
+        cleaned = clean_json(content)
 
-        cleaned = _clean_json_text(raw)
-        data = json.loads(cleaned)
+        try:
+            result = json.loads(cleaned)
+        except json.JSONDecodeError:
+            result = {
+                "title": topic,
+                "slides": [{"number": 1, "title": "AI javobi", "content": content}],
+            }
 
-        if "title" not in data:
-            data["title"] = topic
+        # Google rasmlarni qo'shish
+        if GOOGLE_API_KEY and GOOGLE_CX:
+            result["slides"] = await fetch_slide_images(result.get("slides", []), topic)
 
-        if "slides" not in data or not isinstance(data["slides"], list):
-            logger.error("Gemini response does not contain slides list")
-            return None
+        return result
 
-        return data
-
-    except json.JSONDecodeError as e:
-        logger.error(f"AI JSON parse error: {e}")
-        return None
-
+    except asyncio.TimeoutError:
+        return {
+            "title": "Xatolik",
+            "slides": [{"number": 1, "title": "Timeout", "content": "Groq API javob bermadi (60s). Qaytadan urining."}]
+        }
     except Exception as e:
-        logger.error(f"AI generation error: {e}")
-        return None
+        return {
+            "title": "Xatolik",
+            "slides": [{"number": 1, "title": "Xato", "content": str(e)}]
+        }
 
 
-def format_presentation_text(data, is_premium=False):
-    lines = [f"✨ <b>{data.get('title', 'Taqdimot')}</b>\n"]
+def format_presentation_text(data: dict, is_premium: bool = False) -> str:
+    """Presentation dict ni HTML formatli matnga o'giradi."""
+    title = data.get("title", "Taqdimot")
+    slides = data.get("slides", [])
 
-    for slide in data.get("slides", []):
+    lines = [f"🎨 <b>{title}</b>\n"]
+
+    for slide in slides:
         num = slide.get("number", "")
-        title = slide.get("title", "")
+        stitle = slide.get("title", "")
         content = slide.get("content", "")
         key_points = slide.get("key_points", [])
-        image = slide.get("image_suggestion", "")
-        notes = slide.get("speaker_notes", "")
+        speaker_notes = slide.get("speaker_notes", "")
+        image_url = slide.get("image_url")
 
-        lines.append("━━━━━━━━━━━━━━━━━━━━")
-        lines.append(f"📌 <b>Slayd {num}: {title}</b>")
-        lines.append(f"\n{content}")
-
+        lines.append(f"\n<b>━━━ Slayd {num}: {stitle} ━━━</b>")
+        if content:
+            lines.append(content)
         if key_points:
-            lines.append("\n🔹 <b>Kalit fikrlar:</b>")
-            for kp in key_points:
-                lines.append(f"  • {kp}")
-
-        if is_premium:
-            if image:
-                lines.append(f"\n🖼 <i>Rasm tavsiyasi: {image}</i>")
-            if notes:
-                lines.append(f"🎤 <i>Notiq eslatmasi: {notes}</i>")
-
-        lines.append("")
+            lines.append("\n📌 <b>Asosiy fikrlar:</b>")
+            for point in key_points:
+                lines.append(f"  • {point}")
+        if image_url:
+            lines.append(f'\n🖼 <a href="{image_url}">Rasm ko\'rish</a>')
+        if is_premium and speaker_notes:
+            lines.append(f"\n🎤 <i>Nutq matni: {speaker_notes}</i>")
 
     return "\n".join(lines)

@@ -1,193 +1,106 @@
-# 🤖 AI Taqdimot Generator Bot
+# 🤖 AI Taqdimot Ustasi — Groq + Google Images
 
-Professional AI-powered Telegram bot for generating presentations with coin-based payments.
+Professional AI taqdimot generator Telegram bot.
 
----
+## ✨ Xususiyatlar
 
-## 📁 Project Structure
-
-```
-bot/
-├── main.py                  # Entry point
-├── config.py                # All config & env vars
-├── database.py              # DB engine, session, seed data
-├── models.py                # SQLAlchemy ORM models
-├── keyboards.py             # All keyboards (inline + reply)
-├── states.py                # FSM states
-├── handlers/
-│   ├── user.py              # /start, balance, history
-│   ├── payment.py           # Buy coins, receipt, approve/reject
-│   ├── presentation.py      # Full 6-step wizard + AI generation
-│   └── admin.py             # Full admin panel
-├── services/
-│   ├── ai_service.py        # OpenAI integration
-│   ├── pptx_service.py      # python-pptx PPTX generator
-│   └── payment_service.py   # Payment logic + future provider stubs
-├── utils/
-│   ├── logger.py            # Logging setup
-│   └── validators.py        # Anti-spam + input validation
-├── requirements.txt
-└── .env.example
-```
+- 🚀 **Groq AI** (LLaMA 3 70B) — tez va bepul
+- 🖼 **Google Images** — har bir slaydga avtomatik rasm
+- 📊 **PPTX** — professional PowerPoint fayl
+- 🌐 **3 til** — O'zbek, Rus, Ingliz
+- 🎨 **5 uslub, 5 rang sxemasi**
+- 💰 **Coin tizimi** + to'lov
 
 ---
 
-## ⚙️ Setup (Local)
+## 🛠 O'rnatish
 
-### 1. Clone and enter the directory
+### 1. Fayllarni yuklab oling va papkaga kiring
+
 ```bash
-cd bot/
+cd AI-Taqdimot-Ustasi
 ```
 
-### 2. Create virtual environment
-```bash
-python3.11 -m venv venv
-source venv/bin/activate        # Linux/Mac
-venv\Scripts\activate           # Windows
-```
+### 2. Python paketlarini o'rnating
 
-### 3. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment
+### 3. Node.js paketlarini o'rnating (PPTX uchun)
+
+```bash
+cd services
+npm install pptxgenjs react react-dom react-icons sharp
+cd ..
+```
+
+### 4. `.env` faylini sozlang
+
 ```bash
 cp .env.example .env
+nano .env
 ```
-Edit `.env` with your values:
 
-| Variable | Description |
-|----------|-------------|
-| `BOT_TOKEN` | From [@BotFather](https://t.me/BotFather) |
-| `ADMIN_IDS` | Your Telegram ID(s), comma-separated |
-| `OPENAI_API_KEY` | From [platform.openai.com](https://platform.openai.com) |
-| `CARD_NUMBER` | Your payment card number |
-| `CARD_OWNER` | Card holder name |
+`.env` ga quyidagilarni kiriting:
 
-### 5. Run the bot
+| Kalit | Qayerdan olish |
+|-------|---------------|
+| `BOT_TOKEN` | [@BotFather](https://t.me/BotFather) |
+| `GROQ_API_KEY` | [console.groq.com](https://console.groq.com) — bepul |
+| `GOOGLE_API_KEY` | [console.cloud.google.com](https://console.cloud.google.com) → Custom Search API |
+| `GOOGLE_CX` | [cse.google.com](https://cse.google.com) → yangi engine → ID |
+
+> **Eslatma:** `GOOGLE_API_KEY` va `GOOGLE_CX` ixtiyoriy. Ular bo'lmasa, bot rasimsiz ishlaydi.
+
+### 5. Botni ishga tushiring
+
 ```bash
+bash start.sh
+# yoki
 python main.py
 ```
 
 ---
 
-## 🚀 Deploy to Railway
+## 🔑 API kalitlarni olish
 
-### 1. Push to GitHub
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
-git push -u origin main
-```
+### Groq API (bepul, tez)
+1. [console.groq.com](https://console.groq.com) ga kiring
+2. "API Keys" → "Create API Key"
+3. Kalitni `.env` ga yozing
 
-### 2. Create Railway project
-1. Go to [railway.app](https://railway.app)
-2. Click **New Project** → **Deploy from GitHub repo**
-3. Select your repo
-
-### 3. Add environment variables
-In Railway dashboard → **Variables** tab, add all from `.env`
-
-### 4. Add start command
-In Railway → **Settings** → **Start Command**:
-```
-python main.py
-```
-
-### 5. Deploy
-Railway auto-deploys on push. Check **Logs** tab.
+### Google Custom Search (rasmlar uchun)
+1. [console.cloud.google.com](https://console.cloud.google.com) → yangi loyiha
+2. "Custom Search JSON API" ni yoqing
+3. "Credentials" → "API Key" yarating
+4. [cse.google.com](https://cse.google.com) → "Add" → yangi search engine
+5. "Search the entire web" ni yoqing → CX ID ni oling
 
 ---
 
-## 🤖 Bot Commands
-
-| Command | Description |
-|---------|-------------|
-| `/start` | Register and open main menu |
-| `/admin` | Open admin panel (admins only) |
-| `/cancel` | Cancel current operation |
-
----
-
-## 💎 Features
-
-### Users
-- 🎨 **AI Presentation Wizard** — 6-step guided flow (topic → slides → language → style → color → output type)
-- 💰 **Coin System** — buy packages via manual card payment
-- 📊 **PPTX Export** — professionally designed slides with 5 color themes
-- 📝 **Text Export** — formatted Telegram message
-- ⭐ **Premium** — detailed with image suggestions & speaker notes
-- 📂 **History** — last 10 presentations
-
-### Admin Panel (`/admin`)
-- 👥 User count & blocked stats
-- 💰 Payment history & pending approvals
-- ✅ One-click approve/reject with auto coin credit
-- 🪙 Manually add/remove coins for any user
-- 📢 Broadcast message to all users
-- 🚫 Block/unblock users
-- 📊 Full statistics (revenue, presentations, etc.)
-- ⚙️ Change card number/owner live
-- 🧾 Add/edit/disable coin packages
-
-### Security
-- Anti-spam rate limiting
-- Admin-only routes
-- Balance validation before generation
-- Duplicate payment prevention
-- Environment variable secrets
-
----
-
-## 🎨 Presentation Output Types
-
-| Type | Cost | Format |
-|------|------|--------|
-| 📝 Text only | 5 coins | Telegram message |
-| 📊 PPTX file | 10 coins | .pptx download |
-| ⭐ Premium | 15 coins | Text + image hints + speaker notes |
-
-### PPTX Color Themes
-- 🔵 Blue (Corporate)
-- ⚫ Black (Elegant)
-- ⚪ White (Clean)
-- 🟢 Green (Nature)
-- 🌑 Premium Dark (Luxury)
-
----
-
-## 🔮 Future Payment Integrations
-
-Stubs are ready in `services/payment_service.py`:
-- **Click** (`ClickPaymentProvider`)
-- **Payme** (`PaymePaymentProvider`)
-- **Stripe** (`StripePaymentProvider`)
-- **Telegram Payments** — add via `LabeledPrice` in aiogram
-
----
-
-## 📦 Dependencies
+## 📁 Fayl tuzilishi
 
 ```
-aiogram==3.13.1      # Telegram bot framework
-sqlalchemy==2.0.36   # ORM
-aiosqlite==0.20.0    # Async SQLite
-python-dotenv==1.0.1 # .env loading
-openai==1.57.0       # AI generation
-python-pptx==1.0.2   # PPTX creation
-aiofiles==24.1.0     # Async file ops
-Pillow==11.0.0       # Image processing
+├── main.py               # Bot ishga tushiruvchi
+├── config.py             # Sozlamalar
+├── database.py           # DB ulanish
+├── models.py             # SQLAlchemy modellari
+├── keyboards.py          # Telegram klaviaturalar
+├── states.py             # FSM holatlari
+├── .env.example          # Namuna .env
+├── requirements.txt      # Python paketlar
+├── start.sh              # Ishga tushirish skripti
+├── handlers/
+│   ├── user.py           # Foydalanuvchi handlerlar
+│   ├── presentation.py   # Taqdimot yaratish
+│   ├── payment.py        # To'lov tizimi
+│   └── admin.py          # Admin panel
+├── services/
+│   ├── ai_service.py     # Groq AI + Google Images
+│   ├── pptx_service.py   # PPTX generator (Python)
+│   └── generate_pptx.js  # PPTX generator (Node.js)
+└── utils/
+    ├── logger.py
+    └── validators.py
 ```
-
----
-
-## 🛡️ Architecture Notes
-
-- **Async everywhere** — `async/await` throughout
-- **SQLite → PostgreSQL ready** — change `DATABASE_URL` to `postgresql+asyncpg://...`
-- **Modular routers** — each handler file is an independent `aiogram.Router`
-- **FSM states** — clean wizard flow using `aiogram.fsm`
-- **Scalable** — ready for webhook mode, Redis FSM storage, and PostgreSQL
