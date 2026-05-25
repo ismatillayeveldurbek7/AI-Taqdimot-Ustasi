@@ -11,7 +11,7 @@ ADMIN_IDS: list[int] = [
 
 # ─── AI: Groq ──────────────────────────────────────────────────────────────────
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # ─── Google Custom Search ──────────────────────────────────────────────────────
 GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
