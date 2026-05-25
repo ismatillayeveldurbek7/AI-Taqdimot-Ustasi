@@ -1,4 +1,0 @@
-1. Google AI Studio dan API KEY oling
-2. config.py ichiga joylashtiring
-3. pip install -r requirements.txt
-4. python main.py
