@@ -1,0 +1,3 @@
+Bu versiyada OpenAI va Gemini olib tashlangan.
+Bot internetdagi AI APIsiz ishlaydi.
+Presentation avtomatik template asosida yaratiladi.

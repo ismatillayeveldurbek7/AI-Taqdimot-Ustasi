@@ -1,0 +1,13 @@
+PRO Presentation Bot
+
+Features:
+- Professional slide text
+- Automatic image prompts
+- Multiple premium themes
+- PPT generation
+- Stylish presentation structure
+- No API key required
+- Fully free
+
+Recommended:
+Use with Pexels/Unsplash images for best quality.

@@ -1,44 +1,35 @@
-import json
-import re
-import asyncio
-import google.generativeai as genai
-from config import GEMINI_API_KEY
 
-genai.configure(api_key=GEMINI_API_KEY)
+import random
 
-LANG_MAP = {
-    "uzbek": "O'zbek tilida",
-    "russian": "на русском языке",
-    "english": "in English",
-}
+DESIGNS = [
+    "Modern Blue",
+    "Premium Dark",
+    "Minimal White",
+    "Gradient Purple",
+    "Business Clean",
+    "Creative Neon",
+    "Elegant Gold",
+]
 
-STYLE_MAP = {
-    "Academic": "akademik uslubda, rasmiy va ilmiy",
-    "Business": "biznes uslubda, professional va aniq",
-    "Creative": "ijodiy uslubda, qiziqarli va innovatsion",
-    "Educational": "ta'limiy uslubda, tushuntiruvchi va oddiy",
-    "Minimal": "minimal uslubda, qisqa va lo'nda",
-}
+SLIDE_STRUCTURES = [
+    "Kirish",
+    "Asosiy tushuncha",
+    "Muhim faktlar",
+    "Amaliy qo'llanilishi",
+    "Statistika va tahlil",
+    "Afzalliklari",
+    "Kamchiliklari",
+    "Xulosa"
+]
 
-COLOR_LABEL = {
-    "Blue": "Ko'k rang sxemasi",
-    "Black": "Qora rang sxemasi",
-    "White": "Oq rang sxemasi",
-    "Green": "Yashil rang sxemasi",
-    "PremiumDark": "Premium qora premium rang sxemasi",
-}
-
-def clean_json(text):
-    text = text.strip()
-    text = re.sub(r"```json", "", text)
-    text = re.sub(r"```", "", text)
-
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-
-    if match:
-        return match.group(0)
-
-    return text
+IMAGE_STYLES = [
+    "professional illustration",
+    "cinematic scene",
+    "modern infographic",
+    "business presentation style",
+    "3D render",
+    "high quality educational image",
+]
 
 async def generate_presentation(
     topic,
@@ -49,116 +40,44 @@ async def generate_presentation(
     output_type,
 ):
 
-    try:
+    selected_design = random.choice(DESIGNS)
 
-        lang = LANG_MAP.get(language, "O'zbek tilida")
-        style_text = STYLE_MAP.get(style, "professional")
-        color_text = COLOR_LABEL.get(color, "Ko'k")
+    generated_slides = []
 
-        detail = (
-            "Har bir slayd juda batafsil bo'lsin."
-            if output_type == "premium"
-            else "Har bir slayd professional va qisqa bo'lsin."
-        )
+    for i in range(1, slides + 1):
 
-        prompt = f"""
-Sen professional presentation AI assistantsan.
+        section = SLIDE_STRUCTURES[(i - 1) % len(SLIDE_STRUCTURES)]
 
-Mavzu: {topic}
+        paragraph = f"""
+{topic} mavzusining {section.lower()} qismi.
 
-Slaydlar soni: {slides}
+Bu slaydda {topic} bo‘yicha muhim ma’lumotlar, zamonaviy yondashuvlar,
+amaliy misollar va professional tushuntirishlar beriladi.
 
-Til: {lang}
-
-Uslub: {style_text}
-
-Rang: {color_text}
-
-Talab: {detail}
-
-Faqat JSON format qaytar.
-
-Format:
-
-{{
-  "title": "Presentation title",
-  "slides": [
-    {{
-      "number": 1,
-      "title": "Slide title",
-      "content": "Main content",
-      "key_points": ["Point 1", "Point 2"],
-      "image_suggestion": "Image description",
-      "speaker_notes": "Speaker note"
-    }}
-  ]
-}}
+{topic} bugungi kunda ta’lim, texnologiya va biznes sohalarida keng
+qo‘llanilmoqda. Ushbu mavzu zamonaviy rivojlanishning muhim qismlaridan biridir.
 """
 
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        generated_slides.append({
+            "number": i,
+            "title": f"{section}: {topic}",
+            "content": paragraph,
+            "key_points": [
+                f"{topic} asoslari",
+                f"{topic} bo‘yicha professional ma’lumot",
+                f"{topic} amaliy qo‘llanilishi",
+                f"{topic} zamonaviy texnologiyalar bilan bog‘liqligi"
+            ],
+            "image_suggestion": f"{topic} {random.choice(IMAGE_STYLES)}",
+            "speaker_notes": f"{topic} haqida professional tushuntirish.",
+            "design": selected_design
+        })
 
-        response = await asyncio.to_thread(
-            model.generate_content,
-            prompt
-        )
+    return {
+        "title": topic,
+        "design": selected_design,
+        "slides": generated_slides
+    }
 
-        raw_text = response.text
-
-        cleaned = clean_json(raw_text)
-
-        try:
-            data = json.loads(cleaned)
-        except:
-            data = {
-                "title": topic,
-                "slides": [
-                    {
-                        "number": 1,
-                        "title": "AI javobi",
-                        "content": raw_text
-                    }
-                ]
-            }
-
-        return data
-
-    except Exception as e:
-        return {
-            "title": "Xatolik",
-            "slides": [
-                {
-                    "number": 1,
-                    "title": "Gemini Error",
-                    "content": str(e)
-                }
-            ]
-        }
-
-
-def format_presentation_text(data: dict, is_premium: bool = False) -> str:
-    """
-    Presentation ma'lumotlarini HTML formatli matnga o'giradi.
-    """
-    title = data.get("title", "Taqdimot")
-    slides = data.get("slides", [])
-
-    lines = [f"🎨 <b>{title}</b>\n"]
-
-    for slide in slides:
-        num = slide.get("number", "")
-        stitle = slide.get("title", "")
-        content = slide.get("content", "")
-        key_points = slide.get("key_points", [])
-        speaker_notes = slide.get("speaker_notes", "")
-
-        lines.append(f"\n<b>━━━ Slayd {num}: {stitle} ━━━</b>")
-        if content:
-            lines.append(f"{content}")
-        if key_points:
-            lines.append("\n📌 <b>Asosiy fikrlar:</b>")
-            for point in key_points:
-                lines.append(f"  • {point}")
-        if is_premium and speaker_notes:
-            lines.append(f"\n🎤 <i>Izoh: {speaker_notes}</i>")
-
-    return "\n".join(lines)
+async def format_presentation_text(data):
+    return data
